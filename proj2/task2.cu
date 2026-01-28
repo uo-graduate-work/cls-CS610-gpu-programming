@@ -100,9 +100,10 @@ __host__ void validate(int *c_ref, int *c) {
 /* A = (m, k), B = (k, n), C = (m, n) */
 __host__ void matrixMultCPU(int *a, int *b, int *c, int m, int k, int n) {
     //* Parallelizing with OpenMP so I don't have to wait as long. Results will be the EXACT same as there is no thread contention.
-    omp_set_num_threads(m);
-    printf("Parallelizing with %d threads\n", m);
-    #pragma omp parallel for
+    int num_threads = omp_get_max_threads();  // or a constant like 8, 16
+	omp_set_num_threads(num_threads);
+	printf("Parallelizing with %d threads\n", num_threads);
+	#pragma omp parallel for
 	for (int i=0; i < m; i++){
 		for (int j=0; j < n; j++){
 			c[i*n+j] = 0;

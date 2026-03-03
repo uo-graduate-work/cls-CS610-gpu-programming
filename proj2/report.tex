@@ -1,0 +1,132 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+
+\begin{document}
+
+\title{CS610 Project 2 -- GPU Matrix Multiplication\\Task 1 and Task 2 Performance Report}
+\author{Ethan}
+\date{}
+\maketitle
+
+\section{Experimental Setup}
+
+\begin{itemize}
+  \item \textbf{GPU}: NVIDIA A100 (single GPU).
+  \item \textbf{Problem size}: \(m = k = n = 10{,}000\).
+  \item \textbf{Operation count}: \(2 \cdot m \cdot k \cdot n \approx 2 \times 10^{12}\) integer operations.
+  \item \textbf{Data type}: \texttt{int}.
+  \item \textbf{CPU baseline}: OpenMP-parallel \texttt{matrixMultCPU} on the same system.
+  \item \textbf{GPU timing}: CUDA events around the kernel launch (\texttt{cudaEventRecord(start/stop)}, \texttt{cudaEventElapsedTime}).
+  \item \textbf{End-to-end timing}: Separate CUDA events around H2D copies, kernel, and D2H copy.
+  \item \textbf{CPU timing}: \texttt{std::chrono::high\_resolution\_clock} around \texttt{matrixMultCPU}.
+\end{itemize}
+
+All runs are single-GPU, single-process. For each task, only the CUDA thread block size (\texttt{BLOCK\_SIZE}) is varied. Reported measurements are taken from the saved run outputs in \texttt{proj2/results}.
+
+\section{Task 1 -- Naive Global-Memory Matrix Multiply}
+
+Task 1 uses a straightforward ``1 thread per output element'' kernel. Each thread computes one output element \(C[row, col]\) directly from global memory, loading \(k\) elements from a row of \(A\) and \(k\) elements from a column of \(B\).
+
+The launch configuration is:
+\begin{itemize}
+  \item \textbf{Threads per block}: \((\texttt{BLOCK\_SIZE}, \texttt{BLOCK\_SIZE})\).
+  \item \textbf{Blocks per grid}: \((\lceil n / \texttt{BLOCK\_SIZE} \rceil, \lceil m / \texttt{BLOCK\_SIZE} \rceil)\).
+\end{itemize}
+
+\subsection*{Results (Task 1, \(m = k = n = 10{,}000\))}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|r|r|r|r|}
+    \hline
+    \textbf{BLOCK\_SIZE} & \textbf{Kernel time (ms)} & \textbf{GFLOPS} & \textbf{Full time (ms)} \\
+    \hline
+    8  & 1517.42 & 1318.03 & 1831.29 \\
+    16 &  837.82 & 2387.14 & 1156.40 \\
+    32 &  668.56 & 2991.50 & 1007.60 \\
+    \hline
+  \end{tabular}
+  \caption{Task 1 performance for different block sizes (kernel-only and full execution times).}
+\end{table}
+
+\subsection*{Observations (Task 1)}
+
+\begin{itemize}
+  \item Increasing \texttt{BLOCK\_SIZE} significantly improves performance for this naive kernel.
+  \item The \(32 \times 32\) configuration is fastest, reaching roughly 3.0 TFLOP/s of kernel throughput.
+  \item For this large problem, host--device transfer overhead (difference between full time and kernel time) is noticeable but smaller than the kernel time itself.
+\end{itemize}
+
+\section{Task 2 -- Tiled Shared-Memory Matrix Multiply}
+
+Task 2 replaces the naive kernel with a tiled (blocked) implementation using CUDA shared memory:
+\begin{itemize}
+  \item Each \(\texttt{BLOCK\_SIZE} \times \texttt{BLOCK\_SIZE}\) thread block computes one tile of \(C\).
+  \item For each tile along the \(k\) dimension, the block:
+  \begin{itemize}
+    \item Cooperatively loads a \(\texttt{BLOCK\_SIZE} \times \texttt{BLOCK\_SIZE}\) tile of \(A\) and of \(B\) into shared memory.
+    \item Synchronizes all threads with \texttt{\_\_syncthreads()}.
+    \item Performs a partial dot product using only shared-memory accesses.
+  \end{itemize}
+  \item This reduces global memory traffic by roughly a factor of \texttt{BLOCK\_SIZE} relative to Task 1.
+\end{itemize}
+
+The launch configuration is the same as for Task 1, but the kernel body uses tiling and shared memory.
+
+\subsection*{Results (Task 2, \(m = k = n = 10{,}000\))}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{|r|r|r|r|}
+    \hline
+    \textbf{BLOCK\_SIZE} & \textbf{Kernel time (ms)} & \textbf{GFLOPS} & \textbf{Full time (ms)} \\
+    \hline
+    8  & 687.22  & 2910.28 & 1023.19 \\
+    16 & 453.06  & 4414.44 &  769.48 \\
+    32 & 416.13  & 4806.17 &  756.01 \\
+    \hline
+  \end{tabular}
+  \caption{Task 2 performance for different block sizes (kernel-only and full execution times).}
+\end{table}
+
+\subsection*{Observations (Task 2)}
+
+\begin{itemize}
+  \item As \texttt{BLOCK\_SIZE} increases from 8 to 32, kernel performance improves substantially.
+  \item The best configuration among those tested is \(\texttt{BLOCK\_SIZE} = 32\), reaching about 4.8 TFLOP/s.
+  \item The tiled kernel (Task 2) clearly outperforms the naive kernel (Task 1) at the same block sizes. For example, at \(32 \times 32\), Task 1 reaches roughly 3.0 TFLOP/s, while Task 2 reaches about 4.8 TFLOP/s.
+\end{itemize}
+
+\section{Comparison and Discussion}
+
+\subsection*{Task 1 vs.\ Task 2}
+
+\begin{itemize}
+  \item Task 1 performs all loads directly from global memory and has no data reuse between threads, leading to high memory traffic.
+  \item Task 2 uses shared-memory tiling to reuse elements of \(A\) and \(B\) across many threads in a block, reducing global memory traffic and improving effective throughput.
+  \item At the best block size (\(32 \times 32\)), Task 2 is roughly \(1.6\times\) faster than Task 1.
+\end{itemize}
+
+\subsection*{Effect of Block Size}
+
+\begin{itemize}
+  \item Very small blocks underutilize the GPU and incur higher scheduling overhead.
+  \item Moderate-to-large blocks (e.g.\ \(16 \times 16\), \(32 \times 32\)) provide a better balance between:
+  \begin{itemize}
+    \item Sufficient threads per block to keep the SMs busy.
+    \item Reasonable shared-memory usage per block, allowing many resident blocks per SM.
+  \end{itemize}
+  \item On the A100, \(\texttt{BLOCK\_SIZE} = 32\) gave the best performance for this particular implementation and problem size.
+\end{itemize}
+
+\section{Conclusions}
+
+\begin{itemize}
+  \item The best-performing configuration observed was the tiled shared-memory kernel (Task 2) with \(\texttt{BLOCK\_SIZE} = 32\), achieving approximately 4.8 TFLOP/s on a \(10{,}000^3\) matrix multiply.
+  \item Shared-memory tiling provides a clear performance benefit over the naive global-memory kernel, especially at larger block sizes.
+  \item The experiments highlight how both algorithmic choices (naive vs.\ tiled) and CUDA configuration parameters (block size) strongly influence performance on a modern GPU.
+\end{itemize}
+
+\end{document}
+

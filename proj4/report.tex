@@ -1,0 +1,93 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{CS 610 Coding Assignment 4 --- Report}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Environment}
+\begin{itemize}
+  \item \textbf{GPU:} NVIDIA A100 (Ampere, CC 8.0, 108 SMs, HBM2e)
+  \item \textbf{Compile flags:} \texttt{nvcc -O2 -arch=sm\_80}
+\end{itemize}
+
+\section*{Performance Results}
+
+\begin{table}[h]
+\centering
+\caption{Execution times for all four reduction methods (A100).}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{Student.dat (2048)} & \textbf{Student\_large.dat ($2^{20}$)} \\
+\midrule
+\texttt{maximumMark\_atomic}     & 4.95 ms        & $\sim$208{,}953 ms \\
+\texttt{maximumMark\_recursive}  & 0.063 ms       & 6.58 ms            \\
+\texttt{maximumMark\_SM}         & 0.034 ms       & 2.08 ms            \\
+\texttt{maximumMark\_shuffle}    & 0.036 ms       & 2.11 ms            \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent All four methods passed the \texttt{cpuValidation()} function, which computes the maximum
+sequentially on the CPU and compares against each GPU result:
+\begin{itemize}
+  \item \textbf{Student.dat}: All four methods matched CPU exactly (mark = 99.993896, student = 32651).
+  \item \textbf{Student\_large.dat}: Recursive, SM, and Shuffle matched CPU exactly (mark = 100.0, student = 25663).
+        Atomics found the correct mark (100.0) but a different student ID (22760 vs.\ 25663)
+        due to non-deterministic tie-breaking among multiple students with the same maximum score.
+\end{itemize}
+
+\section*{Cross-GPU Comparison}
+
+For reference, Table~2 shows the same kernels executed on an RTX 4090 (Ada Lovelace, CC 8.9, 128 SMs, GDDR6X).
+
+\begin{table}[h]
+\centering
+\caption{Execution times on RTX 4090 for comparison.}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Method} & \textbf{Student.dat (2048)} & \textbf{Student\_large.dat ($2^{20}$)} \\
+\midrule
+\texttt{maximumMark\_atomic}     & 2.55 ms      & $\sim$81{,}031 ms \\
+\texttt{maximumMark\_recursive}  & 0.054 ms     & 4.93 ms           \\
+\texttt{maximumMark\_SM}         & 0.025 ms     & 1.33 ms           \\
+\texttt{maximumMark\_shuffle}    & 0.026 ms     & 1.31 ms           \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The RTX 4090 was faster across all methods despite the A100 having $2\times$ higher memory bandwidth (HBM2e at $\sim$2~TB/s vs.\ GDDR6X at $\sim$1~TB/s).
+This is because parallel reduction on these dataset sizes is not purely memory-bandwidth-bound---the RTX 4090's
+higher SM count (128 vs.\ 108) and $2\times$ higher FP32 throughput per SM (Ada's dual-issue datapath) give it
+an advantage on compute-light kernels where the working set fits in the large L2 cache ($\sim$72~MB vs.\ 40~MB).
+The atomic approach shows the largest gap ($2\times$ slower on A100) because the A100 supports more concurrent warps
+per SM (64 vs.\ 48), which increases contention on the spin-lock.
+
+\section*{Analysis}
+
+\textbf{Atomic approach.}
+The spin-lock serializes all threads through a single critical section, making it effectively $O(N)$ serial work.
+On the A100, scaling from 2{,}048 to $2^{20}$ records increased execution time by $\sim$42{,}200$\times$, far worse than the 512$\times$ increase in data size, because contention on the lock variable grows super-linearly as more threads compete for the same cache line.
+
+\textbf{Recursive approach.}
+Each kernel launch halves the data via pairwise comparison in shared memory.
+This requires $\lceil\log_2(N / \text{TPB})\rceil$ sequential kernel launches (3 for 2{,}048 records, 12 for $2^{20}$).
+Kernel launch overhead dominates at small $N$; at large $N$ it is fast but not optimal because only half the threads do useful work per launch and each launch incurs synchronization overhead.
+
+\textbf{Shared memory approach.}
+A single kernel launch fully reduces each block of 256 threads using tree-based parallel reduction ($\log_2(256) = 8$ steps, all in shared memory).
+This is the most efficient because it minimizes kernel launches (just one) and keeps all reduction traffic in fast shared memory.
+The CPU only needs to reduce $N / 256$ block-level results.
+
+\textbf{Shuffle approach.}
+Warp-level reduction using \texttt{\_\_shfl\_down\_sync} avoids shared memory entirely; values are exchanged directly through registers via the warp shuffle unit.
+Performance is nearly identical to the shared memory approach.
+The shuffle kernel leaves more partial results for the CPU ($N/32$ warp results vs.\ $N/256$ block results), but this overhead is negligible.
+
+\end{document}

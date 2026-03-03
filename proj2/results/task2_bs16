@@ -1,0 +1,4 @@
+Launch config: grid=(625,625) block=(16,16)
+Kernel execution time: 453.058594 milliseconds
+GFLOPS: 4414.440047
+Full execution time (including memcpy): 769.481262 milliseconds

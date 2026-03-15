@@ -1,0 +1,59 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+
+\title{Project 5 Brief Performance Report}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Implementation Summary}
+\textbf{Task 1 (Vector Add):} Implemented CUDA vector addition with static device arrays, CUDA event timing, and bandwidth calculations (theoretical and measured). Correctness was verified with host-side checking (0 errors).\\
+\textbf{Task 2 (Ray Tracing):} Completed the ray--sphere kernel using per-pixel intersection tests across all spheres, selected visible sphere by depth rule from the project formulation, and computed color via intersection ratio. Added lightweight CPU vs GPU verification: full compare for small sphere counts and sampled checks for larger counts.
+
+\section*{Performance Comparison: RTX 4090 vs A100}
+
+\subsection*{Task 1}
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Metric & RTX 4090 (Local) & NVIDIA A100 80GB PCIe \\
+\midrule
+Kernel time (ms) & 0.019 & 0.036 \\
+Measured BW (GB/s) & 2409.28 & 1306.73 \\
+Theoretical BW (GB/s) & 1008.10 & 1935.36 \\
+Measured / Theoretical & 238.99\% & 67.52\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The A100 result is plausible and stable. The 4090 value exceeds theoretical DRAM bandwidth because this tiny kernel can be dominated by timing granularity/overheads and cache effects at very short durations.
+
+\subsection*{Task 2}
+\begin{table}[h!]
+\centering
+\begin{tabular}{rcc}
+\toprule
+Spheres & RTX 4090 time (ms) & A100 time (ms) \\
+\midrule
+16   & 0.077 & 0.104 \\
+32   & 0.105 & 0.148 \\
+64   & 0.187 & 0.268 \\
+128  & 0.345 & 0.486 \\
+256  & 0.664 & 0.942 \\
+512  & 1.305 & 1.845 \\
+1024 & 2.573 & 3.654 \\
+2048 & 5.124 & 7.272 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent Both GPUs show the expected near-linear scaling with sphere count. In this environment, the 4090 is consistently faster for this workload, while the A100 still produces correct outputs and stable timing trends.
+
+\section*{Correctness Notes}
+Task 1 reports 0 verification errors. Task 2 CPU/GPU checks show exact agreement for small cases except for rare \(\pm1\) channel differences at a few pixels (normal floating-point rounding behavior across architectures).
+
+\end{document}

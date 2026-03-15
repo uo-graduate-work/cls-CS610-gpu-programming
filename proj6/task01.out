@@ -1,0 +1,12 @@
+Execution time:	0.213216
+Verification: PASSED
+histo[0] = 9 (CPU: 9)
+histo[1] = 13 (CPU: 13)
+histo[2] = 12 (CPU: 12)
+histo[3] = 6 (CPU: 6)
+histo[4] = 4 (CPU: 4)
+histo[5] = 9 (CPU: 9)
+histo[6] = 5 (CPU: 5)
+histo[7] = 6 (CPU: 6)
+histo[8] = 9 (CPU: 9)
+histo[9] = 6 (CPU: 6)

@@ -1,1 +1,39 @@
-**/*.ppm
+# --- Compiled CUDA binaries (rebuild with nvcc; see README.md) ---
+proj2/task1
+proj2/task2
+proj2/task2_bs16
+proj3/task01
+proj3/task02
+proj3/task02_nofmad
+proj3/task03
+proj4/task
+proj4/task5
+proj5/task01
+proj5/task02
+proj6/task01
+proj6/task02
+proj6/task03
+
+# --- LaTeX build artifacts ---
+*.aux
+*.log
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
+
+# proj6 .out files are captured program output (results), not LaTeX artifacts
+!proj6/*.out
+
+# --- Generated images ---
+# PPMs are ~12 MB each and are reproduced by running the tasks.
+# The proj3 source image and instructor reference outputs are the only
+# non-regenerable ones, so they are kept (force-added).
+*.ppm
+!proj3/og_input.ppm
+!proj3/answers/*.ppm
+
+# --- Tooling caches ---
+.ruff_cache/
+__pycache__/
